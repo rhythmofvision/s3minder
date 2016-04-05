@@ -1,0 +1,16 @@
+
+(defcomponent user-panel
+
+  (defun get-initial-state ()
+    (create :username "mikhail"))
+
+  (defun signout (ev)
+    (-> ev (prevent-default))
+    (-> $ (post "/signout" (create) (lambda ()
+                                      (redirect "/")))))
+  
+  (defun render ()
+    (who (:div (:p (+ "Hello " (@ this state username)))
+               (:a :href "/account" "Account")
+               (:span " ")
+               (:a :href "/signout" :on-click (@ this signout) "Sign out")))))

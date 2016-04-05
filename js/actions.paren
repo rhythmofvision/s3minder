@@ -1,0 +1,64 @@
+
+(defcomponent actions-info
+    (:>> :selected numberp)
+  
+  (defun render ()
+    (who (:div :class "unit-50"
+                      (:p (+ "Files selected: "
+                              (@ this props selected)))))))
+
+(defcomponent actions-section
+    (:>> :buffer componentp
+         :selected numberp
+         ;keys-buffer componentp
+         on-copy functionp
+         on-move functionp
+         on-delete functionp
+         on-link (or/c functionp undefp))
+    
+  (defun get-selected ()
+    (let* ((buffer (@ this props buffer))
+           (marked (@ buffer marked)))
+      (vals marked)))
+      
+    ;; (let* ((buffer (@ this props buffer))
+    ;;        (selected (array)))
+    ;;   (dolist (file (@ buffer state files))
+    ;;     (when (@ file state marked)
+    ;;       (push selected file)))
+    ;;   selected))
+  
+  (defun delete ()
+    ; ask user if he really want to delete
+    (fire on-delete))
+
+  (defun move ()
+    (fire on-move))
+
+  (defun copy ()
+    (fire on-copy))
+  
+  (defun rename ()
+    (fire on-rename))
+
+  (defun link ()
+    (fire on-link))
+  
+  (defun render ()
+    (cond ((eq (@ this props selected) 1)
+           (who (:div :class "units-row" :style (create :margin "0")
+                      (% actions-info :selected (@ this props selected))
+                      (:div :class "unit-50"
+                            (:button :on-click (@ this delete) "Delete")
+                            (:button :on-click (@ this copy) "Copy")
+                            (:button :on-click (@ this move) "Move" )
+                            (:button :on-click (@ this rename) "Rename")
+                            (:button :on-click (@ this link) "Link")))))
+          ((> (@ this props selected) 1)
+           (who (:div :class "units-row" :style (create :margin "0")
+                      (% actions-info :selected (@ this props selected))
+                      (:div :class "unit-50"
+                            (:button :on-click (@ this delete) "Delete")
+                            (:button :on-click (@ this copy) "Copy")
+                            (:button :on-click (@ this move) "Move" )))))
+          (t (who (:div))))))

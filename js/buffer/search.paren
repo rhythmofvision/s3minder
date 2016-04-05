@@ -1,0 +1,96 @@
+
+(defcomponent search-keys-list
+    (:>> :bm componentp
+         :buffer componentp
+         :query stringp)
+
+  (mixins (array *buffer-scroll-mixin
+                 *draggable-manager-mixin))
+  
+  (defun get-initial-state ()
+    (create :start 0
+            :keys (array)))
+
+  (defun component-will-mount ()
+    (-> this (update-state (@ this props))))
+
+  (defun update-state (props cb)
+    (flet ((update (data)
+             (set-state% :start (+ (@ self state start) *keys-limit*)
+                         :keys (@ data keys)
+                         last-returned-length (length (@ data keys)))
+             (when cb (cb))))
+      (get-search (@ props query)
+                  (@ self state start)
+                  update)))
+
+  (defun component-will-receive-props (props)
+    ;; (log "component-will-receive-props")
+    ;; (log props)
+    ;; (set-state% :keys (array))
+    ;; (-> this (update-state props))
+    (log (@ props query))
+    (log (@ this props query))
+    (when (not (eq (@ props query) (@ this props query)))
+      (set-state% :keys (array))
+      (-> this (update-state props))))
+  
+  (defun load-more (cb)
+    (when (>= (@ this state last-returned-length) *keys-limit*)
+      (-> this (update-state (@ this props) cb))))
+
+  (defun _move (dest keys)
+    (log "search move")
+    (log dest)
+    (log keys))
+  
+  (defun render ()
+    ;; (log "saerch keys list render")
+    ;; (log (@ this props query))
+    ;; (log (@ this state keys))
+
+    (let* ((has-keys (not (emptyp (@ this state keys))))
+           (keys (when has-keys
+                   (map #'(lambda (data)
+                            (create-key self data :full-key t))
+                        (@ this state keys))))
+           (description (when has-keys
+                          (% description-section))))
+
+      (who (:div description
+                 (:div :id "keys" keys))))))
+
+(defcomponent search-buffer
+    (:>> :bm componentp
+         :id stringp
+         :query stringp
+         on-close functionp)
+
+  (defun get-initial-state ()
+    (create :selected 0
+            :limit nil
+            :start 0
+            :total nil))
+  
+  ;; (path-with-bucket t)
+  
+  (defun close (ev)
+    (-> ev (prevent-default))
+    (fire on-close this))
+  
+  (defun render ()
+    (let ((classes (*cx (create* :buffer t
+                                 (+ "buffer-" (@ this props type)) t))))
+      (who (:div 
+
+            (:div :class "buffer-actions"
+                  (:button :class "btn btn-small btn-actions" :on-click (@ this close) "Close"))
+                 
+            (:div :class classes
+                  (% search-keys-list :ref "list"
+                    :id (@ this props id)
+                    :bm (@ this props bm)
+                    :buffer this
+                    :query (@ this props query))))))))
+
+                        ; (:div :id "keys" keys)))))))

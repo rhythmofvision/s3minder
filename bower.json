@@ -1,0 +1,19 @@
+{
+    "name": "s3minder",
+    "version": "0.1.1",
+    "authors": [
+        "Rhythm of vision <mikhail.malyuk@protonmail.com>"
+    ],
+    "license": "MIT",
+    "ignore": [
+        "**/.*",
+        "node_modules",
+        "bower_components",
+        "test",
+        "tests"
+    ],
+    "dependencies": {
+        "HTML": "0.10.2",
+        "zepto": "1.1.6"
+    }
+}

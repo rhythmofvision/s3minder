@@ -1,0 +1,71 @@
+
+;; (defun difference (arr1 arr2 fn1)
+;;   "O(n^2) - bad"
+;;   (let ((fn (or fn1
+;;                 (lambda (x y)
+;;                   (eq x y))))
+;;         (res (array)))
+;;     (block outer
+;;       (dolist (arr1-el arr1)
+;;         (dolist (arr2-el arr2)
+;;           (when (fn arr1-el arr2-el)
+;;             (return outer)))
+;;         (push res arr1-el)))
+;;     res))
+          
+(defmacro unshift (obj lst)
+  `(chain ,lst (unshift ,obj)))
+
+(defmacro % (component &rest params)
+  (if (eq (length params) 1)
+      `(,component ,params)
+      `(,component (create ,@params))))
+
+(defmacro fire (ev &rest args)
+  `(when (@ this props ,ev)
+     (-> this props (,ev ,@args))))
+
+(defmacro onload (&rest body)
+  `(setf (ps:@ window onload) (lambda () ,@body)))
+
+;; (_ find (list 1 2 3) (lambda (x) ))
+(defmacro _ (fun &rest body)
+  `(chain _ (,fun ,@body)))
+
+(defmacro when-array (test &rest body)
+  `(if (_ is-array ,test)
+       (progn ,@body)))
+
+;; (defmacro $ (&rest body)
+;;   `(@ $ ,@body))
+
+(defmacro =|| (var1 def1)
+  `(when (not ,var1)
+     (setf ,var1 ,def1)))
+
+(defun mlog (&rest args)
+  (dolist (arg args)
+    (log arg)))
+
+(defmacro log (&rest body)
+  `(chain console (log ,@body)))
+
+(defmacro slog (&rest body)
+  `(chain skewer (log ,@body)))
+
+(defmacro glog (&rest body)
+  `(progn
+    (log ,@body)
+    (slog ,@body)))
+
+(defmacro defglobal (name &rest body)
+  `(setf (@ -d-t-i ,name) ,@body))
+
+(defmacro global (name)
+  `(@ -d-t-i ,name))
+
+(defmacro html-query (&rest body)
+  `(chain *html* (query ,@body)))
+
+(defun json-encode (obj)
+  (chain *json* (stringify obj)))

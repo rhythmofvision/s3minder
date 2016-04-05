@@ -1,0 +1,12 @@
+
+(defcomponent empty-buffer
+    (:>> :bm componentp)
+    
+  (defun render ()
+    (let ((classes (*cx (create* :buffer t
+                                 (+ "buffer-" (@ this props type)) t))))
+
+    (who (:div :class classes
+               (:p "I am Empty buffer")
+               (:div (:button :on-click (@ this props bm split-view) "new-buffer")
+                     (:button "copy-buffer")))))))

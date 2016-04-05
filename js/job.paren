@@ -1,0 +1,40 @@
+
+(defjsclass *job ()
+  
+  (defun status ()
+    ))
+
+(defcomponent job
+  (defun render ()
+    (with-slots (data) (@ this props)
+      (who (:li (@ data name))))))
+
+(defcomponent jobs-list
+  ; (jobs (array))
+
+  (defun get-initial-state ()
+    (create :jobs (array)))
+  
+  (defun component-will-mount ()
+    (-> this (set-state (get-jobs))))
+
+  (defun component-did-mount ()
+    (-> window (set-interval (@ this jobs-status) (@ this props jobs-status-interval))))
+
+  (defun add-job (data)
+    (let ((jobs (@ this state jobs)))
+      (push data jobs)
+      (-> this (set-state (create :jobs jobs)))))
+  
+  (defun jobs-status ()
+    )
+  
+  (defun create-job (data)
+    (% job :data data))
+  
+  (defun render ()
+    (let ((jobs (map (@ this create-job)
+                     (@ this state jobs))))
+      (who (:div :style (create :display "none" :border "2px solid red")
+                   (:p "Active jobs: " (length (@ this state jobs)))
+                   (:ul jobs))))))

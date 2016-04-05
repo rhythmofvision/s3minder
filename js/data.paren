@@ -1,0 +1,60 @@
+
+(defun get-buckets (cb)
+  (-> $ (get-j-s-o-n "/api/buckets" cb)))
+
+(defun get-keys (prefix start cb)
+  (when (not start)
+    (setf start 0))
+  (when (not prefix)
+    (setf prefix ""))
+  
+  (-> $ (get-j-s-o-n "/api/keys" (create :key prefix
+                                         :start start)
+                     cb)))
+
+(defun copy-keys (dest keys cb)
+  (log keys)
+  (log dest))
+
+  ;; (-> $ (post "/api/keys/copy"
+  ;;             (create :keys keys :dest dest)
+  ;;             cb)))
+
+(defun move-keys (dest keys cb)
+  (when (not (stringp dest))
+    (setf dest (@ dest ukey)))
+  (log dest)
+  (log keys)
+
+  ;; [TODO] this should not be here
+  (-> $ (post "/api/keys/move"
+              (create :keys keys
+                      :dest (+ dest "/"))
+              cb)))
+
+(defun delete-keys (keys cb)
+  (log keys)
+  (-> $ (post "/api/keys/del"
+              (create :keys keys)
+              cb)))
+
+  ;; ; (log bucket)
+  ;; ; (log prefix)
+  ;; (when (not prefix)
+  ;;   (setf prefix ""))
+
+  ;; ; (log (getprop *data* (+ bucket prefix)))
+  
+  ;; ;; (log bucket)
+  ;; ;; (log prefix)
+  ;; ;; (log "---------------")
+  ;; (let ((res (getprop (getprop *data* (+ bucket prefix)) :keys)))
+  ;;   ; (log res)
+  ;;   res))
+
+(defun get-search (query start cb)
+  (-> $ (get-j-s-o-n "/api/search" (create :query query
+                                           :start start) cb)))
+
+(defun get-jobs ()
+  (create :jobs (array (create :name "Deleting files"))))

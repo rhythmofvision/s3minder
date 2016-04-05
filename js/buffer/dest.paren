@@ -1,0 +1,71 @@
+
+;; Destination buffer is used to select MOVE, COPY and other operation
+;; destinations, it shows only paths!
+
+(defcomponent dest-buffer
+  (defun get-initial-state ()
+    (create :keys (array)))
+
+  (defun component-will-receive-props (props)
+    (flet ((update (data)
+             (-> self (set-state (create :selected 0
+                                         :start 0
+                                         :keys (@ data keys))))))
+      (when (or (not (eq (@ props bucket) (@ this props bucket)))
+                (not (eq (@ props prefix) (@ this props prefix))))
+        (get-keys (@ props bucket)
+                  (@ props prefix)
+                  (@ this state start)
+                  update))))
+
+  (defun component-will-mount ()
+    (-> this (update-state (@ this props))))
+  
+  (defun update-state (props)
+    (flet ((update (data)
+             (-> self (set-state (create :keys (append (@ self state keys) (@ data keys))
+                                         :start 0)))))
+      (get-keys (@ props bucket)
+                (@ props prefix)
+                (@ this state start)
+                update)))
+
+  (defun build-dirs ()
+    (when (@ this props prefix)
+      ; todo
+      ; this is a temproary fixup
+      (filter #'len
+               (split "/" (@ this props prefix)))))
+
+  (defun/contract create-key (key-data)
+    (>> objectp componentp)
+    (key (create :active t
+                 :data key-data
+                 :buffer this)))
+  
+  (defun render ()
+    (let ((keys (map (@ this create-key)
+                     (filter (lambda (data)
+                               (pathp (@ data key)))
+                             (@ this state keys)))))
+          
+      (who (:div :class "buffer"
+                   (:p "Move")
+                   (:div (:div :class "units-row"
+                               (% status-section :bucket (@ this props bucket)
+                                                 :dirs (-> this (build-dirs))
+                                                 :bm (@ this props bm)
+                                                 :buffer self)))
+                         
+                   (description-section)
+                   ;; (:div :id "dirs" dirs)
+                   (:div :id "keys" keys))))))
+  
+  ;; (defun render ()
+  ;;   (let ((keys (map (partial create-key this)
+  ;;                    (@ this state keys))))
+  ;;     (who (:div
+  ;;                  (:p "Please mark the destination")
+  ;;                  (description-section)
+  ;;                  ;; (:div :id "dirs" dirs)
+  ;;                  (:div :id "keys" keys))))))

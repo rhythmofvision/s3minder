@@ -1,0 +1,326 @@
+
+(defun fullpath (buffer)
+  "Given a buffer component instance get a fullpath representing this
+buffer, like s3://bucket/path/ when path/ is open inside bucket/"
+  (let ((fp (concat "s3://" (@ buffer props bucket) "/")))
+    (if (@ buffer props prefix)
+        (concat fp (@ buffer props prefix))
+        fp)))
+
+
+(defun create-key (buffer key-data &key (full-key false))
+  ;; (>> componentp
+  ;;     (object/c :key stringp)
+  ;;     componentp)
+  (flet ((update-marked (got-selected key-data)
+           (let ((selected-num (if got-selected
+                                   (+ (@ buffer state selected) 1)
+                                   (- (@ buffer state selected) 1))))
+             (setf (@ key-data marked) got-selected)
+             (-> buffer (set-state (create :selected selected-num)))
+             (when (@ buffer on-select)
+               (-> buffer (on-select selected-num got-selected)))))
+         (update-highlight (got-selected key-data)
+           (setf (@ key-data hightlighted) got-selected)))
+    
+    (with-slots (bm) (@ buffer props)
+      (% key :active  t
+             :data    key-data
+             :buffer  buffer
+             full-key full-key
+             on-mark        (partial update-marked t)
+             on-unmark      (partial update-marked f)
+             on-highlight   (partial update-highlight t)
+             on-unhighlight (partial update-highlight f)
+             on-drag-start  (@ buffer on-drag-start)
+             on-drag-stop   (@ buffer on-drag-stop)
+             on-drag-move   (@ buffer on-drag-move)
+             on-open        (-> bm open (bind bm buffer))))))
+
+
+(defcomponent empty-keys-list
+  (defun render ()
+    (who (:p "Empty!"))))
+
+
+(defcomponent keys-list
+    (:>> :bm componentp
+         :buffer componentp
+         :ukey stringp)
+
+  (mixins (array *buffer-scroll-mixin
+                 *draggable-manager-mixin))
+  
+  (defun get-initial-state ()
+    (create :start 0
+            :selected 0
+            :limit nil
+            :total nil
+            :keys (array)))
+
+  (defun component-will-receive-props (props)
+    ;; (>> (object/c :bucket (not/c emptyp)
+    ;;               :prefix stringp)
+    ;;     anyp)
+    (flet ((update (data)
+             (-> self (set-state (create :selected 0
+                                         :start 0
+                                         :keys (@ data keys))))))
+      (when (not (eq (@ props ukey) (@ this props ukey)))
+        (get-keys (@ props ukey)
+                  0 ; (@ this state start)
+                  update))))
+
+  (defun component-will-mount ()
+    (-> this (update-state (@ this props))))
+  
+  (defun update-state (props cb)
+    (flet ((update (data)
+             (set-state% :keys (append (@ self state keys) (or (@ data keys) (array)))
+                         :start (+ (@ self state start) *keys-limit*)
+                         last-returned-length (or (and (@ data keys) (length (@ data keys)))
+                                                  0))
+             (when cb (cb))))
+      (get-keys (@ props ukey)
+                (@ this state start)
+                update)))
+  
+  (defun load-more (cb)
+    (when (>= (@ this state last-returned-length) *keys-limit*)
+      (-> this (update-state (@ this props) cb))))
+  
+  (defun refresh (cb)
+    (flet ((update (data)
+             (set-state% :keys (@ data keys)
+                         :start *keys-limit*
+                         last-returned-length (or (and (@ data keys) (length (@ data keys)))
+                                                  0))
+             (when cb (cb))))
+      (get-keys (@ this props ukey)
+                0
+                update)))
+  
+  (defun remove-non-active ()
+    (set-state% :keys (filter #'activep
+                              (@ this state keys))))
+  
+  (defun _move (dest keys)
+    (flet ((done ()
+             (-> self (remove-non-active))))
+      (-> self (finished-action keys))
+      (-> s3m (new-move-job dest keys done))
+      (set-state% :keys (@ self state keys))))
+  
+  (defun move ()
+    (let ((keys (filter #'markedp (@ this state keys))))
+      (-> this props bm (get-dest this
+                   (lambda (dest)
+                     (when dest
+                       (-> self (_move dest keys))))))))
+  
+  (defun copy ()
+    (let ((keys (filter #'markedp (@ this state keys))))
+      (-> this (finished-action keys))
+      (-> s3m (new-copy-job "path://miraishome/somefolder/"
+                            keys))))
+  
+  (defun delete ()
+    (let* ((keys (filter #'markedp (@ this state keys)))
+           (diff (difference (@ this state keys)
+                             keys
+                             (lambda (x y)
+                               (eq (@ x ukey) (@ y ukey))))))
+
+      ;; (log keys)
+      ;; (log diff)
+      
+      (-> this (set-state (create :keys diff)))
+      (-> this (finished-action))
+      
+      (-> s3m (new-delete-job keys))))
+  
+  (defun on-select (selected-num got-selected)
+    (fire on-select selected-num got-selected))
+  
+  (defun finished-action (marked-keys)
+    ; (>> (listof/c keyp) anyp)
+    ; (setf (@ this marked) (create))
+    (set-state% :selected 0)
+    (map #'(lambda (key)
+             (setf (@ key marked) f
+                   (@ key active) f))
+         marked-keys))
+  
+  (defun create-path (path-name)
+    (let ((key (create :key (+ (@ this props ukey) "/" path-name "/")
+                       :meta (json-encode (create :name (+ path-name "/")
+                                                  :size 0)))))
+      (-> $ (post "/api/keys" key
+                  (lambda (res)
+                    (-> self (refresh))))))
+                  ;; (let ((keys (@ self state keys)))
+                  ;;   (-> keys (unshift key))
+                  ;;   (-> self (set-state (create :keys keys))))))))
+    (-> this (hide-path-dialog)))
+
+  (defun hide-path-dialog ()
+    (fire on-hide-path-dialog))
+  
+  (defun render ()
+    (let* ((has-keys (not (emptyp (@ this state keys))))
+           (keys (when has-keys
+                   (map (partial create-key this)
+                        (@ this state keys))))
+           (description (when has-keys
+                          (% description-section)))
+           (new-path (when (@ this props new-path-dialog)
+                       (% new-path-dialog on-create (@ this create-path)
+                                          on-cancel (@ this hide-path-dialog)))))
+      (who (:div (% actions-section :buffer self
+                                    :selected (@ this state selected)
+                                    on-delete (@ this delete)
+                                    on-move (@ this move)
+                                    on-copy (@ this copy))
+                 description
+                 new-path
+                 (:div :id "keys" keys))))))
+
+
+(defcomponent keys-buffer
+    (:>> :bm componentp
+         :ukey stringp
+         ;; :bucket stringp
+         ;; :prefix (or/c undefp stringp)
+         
+         on-close functionp)
+         ;; on-highlight (or/c undefp functionp)
+         ;; on-unhighlight (or/c undefp functionp))
+         
+  ; sc - storage class
+  ; type - type (image/video etc)
+
+  ;; [TODO] this prop is used inside highlight mixin, because the mixins checks (for directories) if you those are active (they can be not, for example in process of being deleted), and buffers are always active, so this is a way to skip that check 
+  (always-active t)
+  
+  (path-with-bucket nil)
+  ; (marked (create))
+
+  (mixins (array *highlight-mixin))
+  
+  (defun get-initial-state ()
+    ;(>> anyp objectp)
+    (create :selected 0
+            :highlighted nil
+            :limit nil
+            :start 0
+            :total nil
+            new-path-dialog nil))
+  
+  (defun on-select (selected-num got-selected)
+    (set-state% :selected selected-num))
+  
+  (defun close (ev)
+    (-> ev (prevent-default))
+    (fire on-close this))
+  
+  (defun status-path-unhighlighted ()
+    (set-state% status-highlighted nil))
+  
+  (defun status-path-highlighted (status-section-dir-component)
+    ;; (>> pathp anyp)
+    (set-state% status-highlighted (@ status-section-dir-component props data ukey)))
+  
+  (defun/contract add-file-upload (file)
+    (>> (instance-of *file) anyp)
+    (let* ((self this)
+           (list (@ this refs list))
+           (keys (@ list state keys)))
+      (push (create :key (@ file name)
+                    :name (@ file name)
+                    :size 12345
+                    :owner "mikhail"
+                    :lm 1234
+                    :etag "etag"
+                    :sc "sc"
+                    :active f)
+            keys)
+      (-> list (set-state (create :keys keys)))))
+
+  (defun/contract file-upload-finished (file status)
+    (>> (instance-of *file) anyp anyp)
+    (let* ((self this)
+           (list (@ this refs list))
+           (keys (@ list state keys))
+           (key-data (find-if (lambda (fn) (equal (@ fn key)
+                                                  (@ file name)))
+                              keys)))
+      (when key-data
+        (setf (@ key-data active) t)
+        (-> list (set-state (create :keys keys))))))
+  
+  (defun new-path-created (name)
+    (log name)
+    (log "new-path-created"))
+
+  (defun create-new-path (name)
+    (-> this (set-state (create new-path-dialog t))))
+  
+  (defun refresh ()
+    (-> this refs list (refresh (lambda ()
+                                  ()))))
+  
+  (defun copy-view (ev node)
+    "Copy this buffer"
+    (fire on-copy-view this))
+
+  (defun hide-path-dialog ()
+    (-> this (set-state (create new-path-dialog nil))))
+  
+  ;; [TODO] there should be a better way to do communication between
+  ;; siblings, because if %keys-list component owns keys as it's
+  ;; state, then %actions-section needs to act on component directly,
+  ;; which is bad, since you need to keep reference to keys-list
+  ;; inside parent component and do all communication inside the
+  ;; parent component :-/
+  
+  (defun render ()
+    (let ((move-q (when (@ this props move-keys-p)
+                    (who (:p "Move keys"))))
+          (classes (*cx (create* :buffer t
+                                 (+ "buffer-" (@ this props type) t)))))
+      (who (:div
+            (:div :class "buffer-actions"
+                  (:button :class "btn btn-small btn-actions" :on-click (@ this create-new-path) "mkdir")
+                  ;; (% create-new-path :ukey (@ this props ukey)
+                  ;;                    on-create (@ this new-path-created))
+                  (:button :class "btn btn-small btn-actions" :on-click (@ this copy-view) "Copy buffer")
+                  (:button :class "btn btn-small btn-actions" :on-click (@ this refresh) "Refresh")
+                       
+                  (% upload :buffer self
+                            :ukey (@ this props ukey)
+                            on-upload-start (@ this add-file-upload)
+                            on-upload-end (@ this file-upload-finished))
+                             
+                  (:button :class "btn btn-small btn-actions" :on-click (@ this close) "Close"))
+            
+            (:div :class classes
+                 :on-mouse-over (@ this highlight)
+                 :on-mouse-out  (@ this unhighlight)
+                 move-q
+
+                 (:div :class "units-row"
+                       (% status-section :ukey (@ this props ukey)
+                                         :buffer self
+                                         :bm (@ this props bm)
+                                         on-path-highlight (@ this status-path-highlighted)
+                                         on-path-unhighlight (@ this status-path-unhighlighted)))
+                 
+                 ;; (:div :id "dirs" dirs)
+                 (% keys-list :id (@ this props id)
+                              :bm (@ this props bm)
+                              :ref "list"
+                              :buffer this
+                              :ukey (@ this props ukey)
+                              new-path-dialog (@ this state new-path-dialog)
+                              on-hide-path-dialog (@ this hide-path-dialog)
+                              on-select (@ this on-select))))))))

@@ -1,0 +1,162 @@
+
+(defun type-to-component (type)
+  (case type
+    ("buckets" buckets-buffer)
+    ("keys"    keys-buffer)
+    ("search"  search-buffer)
+    ("welcome" welcome-buffer)
+    ("empty"   empty-buffer)
+    ("dest"    dest-buffer)))
+
+(defcomponent buffers-manager
+    (:>> :query (or/c nullp stringp))
+  
+  (defun get-initial-state ()
+    (create :buffers (array (-> this (new-buffer "empty"))
+                            (-> this (new-default-buffer)))))
+
+  (defun component-will-receive-props (props)
+    "Checks for search query"
+    ;; (when (and (@ props query)
+    ;;            (not (eq (@ props query) (@ this props query))))
+    (-> this (open-search (@ props query))))
+
+  ;;;;;;;;;;
+  
+  (defun two-buffers-p ()
+    (eq (length (@ this state buffers)) 2))
+  
+  (defun left-buffer ()
+    (aref (@ this state buffers) 0))
+  
+  (defun right-buffer ()
+    (aref (@ this state buffers) 1))
+
+  ;;;;;;;;;;
+  
+  (defun create-buffer (props)
+    (let* ((id (or (@ props id) (generate-id)))
+           (cls (type-to-component (@ props type)))
+           (buffer-data (extend (create :id id
+                                        :bm this
+                                        :ref (+ "buffer-" id)
+                                        on-close (@ this close)
+                                        on-copy-view (@ this copy-buffer-view))
+                                props)))
+      (cls buffer-data)))
+
+  (defun new-buffer (type data)
+    (extend (create :type type
+                    :id (generate-id))
+            data))
+
+  (defun new-default-buffer ()
+    (-> this (new-buffer "buckets")))
+  
+  (defun set-new-buffer (buffer)
+    (set-state% :buffers (array buffer)))
+
+  (defun add-new-buffer (buffer &key (as-first f))
+    (let ((buffers (@ this state buffers)))
+      (if (-> this (two-buffers-p))
+          (if as-first
+              (setf (aref buffers 0) buffer)
+              (setf (aref buffers 1) buffer))
+          (if as-first
+              (unshift buffer buffers)
+              (push buffer buffers)))
+      (set-state% :buffers buffers)))
+
+  (defun replace-buffer (old-buffer new-buffer)
+    (let* ((buffers (@ this state buffers))
+           (bufs (nreplace buffers
+                           old-buffer
+                           new-buffer
+                           :test (lambda (x y)
+                                   (eq (@ x id) (@ y props id))))))
+    (set-state% :buffers bufs)))
+
+  (defun find-buffer-idx (buffer)
+    (find-idx (@ this state buffers)
+              buffer
+              (lambda (x y)
+                (eq (@ x id) (@ y props id)))))
+  
+  ;;;;;;;;;;
+  
+  (defun/contract open (buffer ev node component)
+    "Buffer is the parent component and component is usually a
+    component representing a key"
+    (>> componentp anyp anyp
+        ;; component should have props with data object which should
+        ;; contain a key
+        (or/c undefp (object/c :props (object/c :data (object/c :ukey stringp))))
+        anyp)
+
+    
+    ;; (if (@ buffer props move-keys-p)
+        ;; (-> this (replace-buffer buckets-buffer (create :type "dest"
+        ;;                                                 :bucket name
+    ;;                                                 :id (generate-id))))
+                                        ;(log (@ component props data ukey))
+
+    (log buffer)
+    (log (@ buffer props))
+    
+    (let ((new-buffer (if component
+                          (-> this (new-buffer "keys" (create :id (@ buffer props id)
+                                                              :ukey (@ component props data ukey))))
+                          (-> this (new-default-buffer)))))
+      
+      (-> this (replace-buffer buffer new-buffer))))
+  
+  (defun open-search (query)
+    "Open search buffer with query"
+    (let ((new-buffer (-> this (new-buffer "search" (create :query query)))))
+      (-> this (add-new-buffer new-buffer :as-first t))))
+
+  (defun close (buffer)
+    "Close buffer"
+    (flet ((buf-equal (buf)
+             (eql (@ buf id) (@ buffer props id))))
+      (let ((bufs (remove-if #'buf-equal
+                             (@ this state buffers))))
+        (if (length bufs)
+          (set-state% :buffers bufs)
+          (-> this (set-new-buffer (-> this (new-default-buffer))))))))
+  
+  (defun confirm-selected (orig-buffer cb)
+    )
+  
+  ;; (defun get-dest (orig-buffer cb)
+  ;;   (if (-> this (two-buffers-p))
+  ;;       (-> this (confirm-selected orig-buffer cb))
+  ;;       (-> this (add-new-buffer (create :id (generate-id)
+  ;;                                        :type "buckets"
+  ;;                                        move-keys-p t)))))
+
+  ;;;;;;;;;;
+  
+  (defun split-view ()
+    "Create second"
+    (let ((buffer (-> this (new-default-buffer))))
+      (-> this (add-new-buffer buffer))))
+  
+  (defun copy-buffer-view (buffer)
+    (let ((idx (-> this (find-buffer-idx buffer)))
+          (new-buffer (-> this (new-buffer (@ buffer props type)
+                                           (create :ukey (@ buffer props ukey))))))
+      (if (eq idx 0)
+          (-> this (add-new-buffer new-buffer))
+          (-> this (add-new-buffer new-buffer :as-first t)))))
+  
+  
+  ;;;;;;;;;;
+  
+  (defun render ()
+    (let ((buffers (map (@ this create-buffer)
+                        (@ this state buffers))))
+      (who (:div
+            
+            (:div :class "buffers-list"
+                  (:div :class "buffers" buffers)))))))

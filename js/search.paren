@@ -1,0 +1,43 @@
+
+(defcomponent search-bar
+    (:>> on-search functionp)
+    
+  (defun get-initial-state ()
+    (create :query nil))
+
+  (defun update-query (ev)
+    (-> this (set-state (create :query (@ ev target value)))))
+  
+  (defun search (ev)
+    (-> ev (prevent-default))
+    (let ((query (@ this state query)))
+      (fire on-search query)))
+  
+      ; (-> this props bm (open-search query))))
+          
+      ;;     (main (@ this props main)))
+      ;; (when query
+      ;;   (-> this (set-state (create :oldbuffer
+      ;;                               (@ main state buffers))))
+      ;;   (-> main (set-state (create :buffers
+      ;;                               (search-buffer (create :query query
+      ;;                                                      :main main))))))))
+
+  (defun render ()
+    (who (:div :class "search-bar"
+                      (:form :class "forms forms-inline" :on-submit (@ this search)
+                             (:input :type "text"
+                                     :class "width-100"
+                                     :style (create padding-left "10px;")
+                                     :on-change (@ this update-query)
+                                     :placeholder "Search for keys"
+                                     :name "search")
+                             ;; (:button :type "submit"
+                             ;;         :class "btn btn-big"
+                             ;;         :on-click (@ this search)
+                             ;;         "Search")
+                             ;; (:button :type "submit"
+                             ;;         :class "btn btn-big"
+                             ;;         :on-click (@ this cancel)
+                             ;;         "Cancel")
+                             )))))

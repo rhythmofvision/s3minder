@@ -1,0 +1,117 @@
+
+(defvar *config (create aws-access-key ""
+                        policy ""))
+
+(defjsclass *aws-upload ()
+  (defun/contract initialize (key region)
+    (>> stringp stringp anyp)
+    (this-setf :key key
+               :region region))
+  
+  (defun init-credential (iso-date)
+    (let ((date-parts (split "T" iso-date)))
+      (join "/"
+            (array (@ *config aws-access-key)
+                   (aref date-parts 0)
+                   (@ this region)
+                   "s3"
+                   "aws4_request"))))
+  
+  (defun/contract init-form (file cb)
+    (>> (instance-of *file) functionp anyp)
+    (let ((self this)
+          (data (new (*form-data))))
+      (if (@ this prefix)
+          (-> data (append "key" (+ (@ this prefix) "${filename}")))
+          (-> data (append "key" "${filename}")))
+      
+      (-> data (append "x-amz-algorithm" "AWS4-HMAC-SHA256"))
+      (-> $ (get-j-s-o-n "/api/s3policy" (create :key (@ this key))
+                         (lambda (res)
+                           (-> data (append "policy" (@ res policy)))
+                           (-> data (append "x-amz-signature" (@ res signature)))
+                           (-> data (append "x-amz-credential" (-> self (init-credential (@ res date)))))
+                           (-> data (append "x-amz-date" (@ res date)))
+                           (-> data (append "file" file))
+                           (cb data))))))
+
+  (defun start (el file &key on-start on-end on-progress)
+    (let ((self this)
+          (reader (new (*file-reader)))
+          (key (parse-key (@ this key)))
+          ;(ctrl (create-trobber el))
+          (xhr (new (*x-m-l-http-request))))
+      (flet ((done ()
+               (when (eq (@ xhr status) 204)
+                 (-> $ (post "/api/keys" (create :key (+ (@ self key) "/" (@ file name))
+                                                 :meta (to-json (create :size 1000)))
+                             (lambda (res)
+                               ()))))
+               (when on-end (on-end file (@ xhr status))))
+             
+             (progress (ev)
+               (when on-progress (on-progress ev)))
+               ;; (when (@ ev length-computable)
+               ;;   (let ((perc (round (/ (* (@ ev loaded) 100) (@ ev total)))))
+               ;;     (-> ctrl (update perc))))
+             
+             (state-change ()
+               (when (eq (@ xhr ready-state) 4)
+                 (done)))
+             
+             (load (ev)
+               (log xhr)
+               (log (@ xhr status))
+               
+             ))
+               ;; (-> ctrl (update 100))
+               ;; (let ((canvas (@ ctrl ctx canvas)))
+               ;;   (-> canvas parent-node (remove-child canvas)))
+               
+             ;(reader-on-load (ev)
+             ;  (-> xhr (send-as-binary (@ ev target result)))))
+        (-> xhr upload (add-event-listener "progress" progress f))
+        (-> xhr upload (add-event-listener "load" load f))
+        (setf (@ xhr onreadystatechange) state-change)
+
+        (-> xhr (open "POST" (+ "http://" (@ key host) ".s3.amazonaws.com/")))
+        (-> this (init-form file (lambda (form)
+                                   (when on-start (on-start file))
+                                   (-> xhr (send form)))))))))
+        ; xhr.overrideMimeType('text/plain; charset=x-user-defined-binary');
+        ;(setf (@ reader onload) reader-on-load)
+        ;(-> reader (read-as-binary-string file)))))
+
+(defcomponent file-selector
+  (defun file-selector (ev)
+    (-> ev (prevent-default))
+    (let* ((node (-> this (get-d-o-m-node)))
+           (files (@ node files)))
+      (fire on-select files)))
+  
+  (defun render ()
+    (who (:input :type "file"
+                        :style (create :display "none")
+                        :on-change (@ this file-selector)))))
+
+(defcomponent upload
+  (defun choose-file ()
+    (let* ((node (-> this (get-d-o-m-node)))
+           (input (find-if (lambda (n) (equal (@ n node-name) "INPUT"))
+                           (@ node children))))
+      (-> input (click))))
+
+  (defun upload-files (files)
+    ; (>> (listof/c (instance-of *file)) anyp)
+    (-> (new (*aws-upload (@ this props ukey)
+                          "us-east-1"))
+        (start nil (aref files 0)
+               :on-start (@ this props on-upload-start)
+               :on-end (@ this props on-upload-end)
+               :on-progress (@ this props on-upload-progress))))
+  
+  (defun render ()
+    (who (:div :style (create display "inline")
+                      (% file-selector :ukey (@ this props ukey)
+                                       on-select (@ this upload-files))
+                      (:button :class "btn btn-small btn-actions" :on-click (@ this choose-file) "Upload")))))

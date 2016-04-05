@@ -1,0 +1,108 @@
+
+(defcomponent status-section-dir
+    (:>> on-open functionp
+         on-highlight (or/c undefp functionp)
+         on-unhighlight (or/c undefp functionp)
+         :buffer componentp
+         :data (object/c :ukey stringp))
+  
+  (defun get-initial-state ()
+    (create :highlighted f))
+  
+  (defun open (ev node)
+    (fire on-open ev node this))
+  
+  (defun highlight ()
+    (set-state% :highlighted t)
+    (fire on-highlight this))
+  
+  (defun unhighlight ()
+    (set-state% :highlighted f)
+    (fire on-unhighlight this))
+  
+  (defun render ()
+    (let* ((cx (@ *react addons class-set))
+           (classes (cx (create :highlighted (@ this state highlighted))))
+           (key (parse-key (@ this props data ukey)))
+           (name (last (split "/" (@ key pathname)))))
+      (who (:li :class classes
+                       (:a :href "#"
+                           :on-mouse-over (@ this highlight)
+                           :on-mouse-out (@ this unhighlight)
+                           :on-click (@ this open)
+                           name))))))
+
+(defun build-dirs (prefix)
+  (filter #'len (split "/" prefix)))
+
+(defun build-dirs-from-prefix (prefix)
+  (if prefix
+      (build-dirs prefix)
+      (array)))
+
+(defcomponent status-section
+    (:>> :bm componentp
+         :buffer componentp
+         :ukey stringp)
+    
+  (defun get-initial-state ()
+    (let* ((key (parse-key (@ this props ukey)))
+           (dirs (slice (split "/" (@ key pathname)) 2 10000)))
+      (create :dirs dirs)))
+  
+    ;; (create :dirs (build-dirs-from-prefix (@ this props prefix))))
+  
+  (defun component-will-receive-props (props)
+    (let* ((key (parse-key (@ props ukey)))
+           (dirs (slice (split "/" (@ key pathname)) 2 10000)))
+      (set-state% :dirs dirs)))
+  
+  (defun top-level (ev node)
+    (-> ev (prevent-default))
+    (with-slots (bm bucket buffer) (@ this props)
+      (-> bm (open-bucket buffer ev node bucket))))
+  
+  (defun buckets-list (ev node)
+    (-> ev (prevent-default))
+    (with-slots (bm buffer bucket) (@ this props)
+      (-> bm (open buffer ev node))))
+  
+  (defun highlight (component)
+    (fire on-path-highlight component))
+  
+  (defun unhighlight ()
+    (fire on-path-unhighlight))
+  
+  (defun build-path ()
+    (with-slots (bm buffer) (@ self props)
+      (maplist (lambda (dirs)
+                 (% status-section-dir
+                    on-open (-> bm open (bind bm buffer))
+                    on-highlight (@ self highlight)
+                    on-unhighlight (@ self unhighlight)
+                    :buffer buffer
+                    :data (create :ukey (+ "s3://" (join "/" dirs)))))
+                    
+                    ;; :data (create ;:highlighted (@ dirs highlighted)
+                    ;;               :prefix (+ (join "/" (except-last dirs)))
+                    ;;               :name (last dirs))))
+               (@ self state dirs))))
+  
+  (defun render ()
+    ;; (if (not (@ this props bucket))
+    ;;     (who (:div :class "status unit-50"
+    ;;                       (:h4 "PowerS3")))
+    (let* ((cx (@ *react addons class-set))
+           (classes (cx (create :highlighted (@ this state highlighted-bucket)))))
+          
+      (who (:div :class "unit-90 status"
+                 (:nav :class "breadcrumbs breadcrumbs-path"
+                       (:ul (:li (:a :href "#"
+                                     :on-click (@ this buckets-list)
+                                     "Home"))
+                            ;; (:li :class classes (:a :href "#"
+                            ;;          :on-mouse-over (@ this highlight-bucket)
+                            ;;          :on-mouse-out (@ this unhighlight-bucket)
+                            ;;          :on-click (@ this top-level)
+                            ;;          (@ self props bucket)))
+                            (-> this (build-path)))))))))

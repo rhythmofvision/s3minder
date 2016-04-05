@@ -1,0 +1,6 @@
+
+(defcomponent welcome-buffer
+    (defun render ()
+      (let ((classes (*cx (create* :buffer t
+                                   (+ "buffer-" (@ this props type)) t))))
+        (who (:div :class classes (:p "Hello world this is Flohu"))))))

@@ -1,0 +1,19 @@
+
+(defvar *highlight-mixin
+  
+  (labels ((highlight ()
+             (when (or (@ this always-active)
+                       (and (@ this props data)
+                            (not (eq (@ this props data active) f))))
+               (fire on-highlight (@ this props data))
+               (-> this (set-state (create :highlighted t)))))
+    
+           (unhighlight ()
+             (when (or (@ this always-active)
+                       (and (@ this props data)
+                            (not (eq (@ this props data active) f))))
+               (fire on-unhighlight (@ this props data))
+               (-> this (set-state (create :highlighted nil))))))
+    
+    (create highlight highlight
+            unhighlight unhighlight)))

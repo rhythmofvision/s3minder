@@ -1,0 +1,164 @@
+
+(defvar *keys-limit* 50)
+
+(defvar *cx (@ *react addons class-set))
+
+;; validation class
+
+(defjsclass *validation ()
+  (setf% default-error-message "Validation failed")
+  
+  (defun initialize (fun options)
+    ;(>> functionp (or/c objectp undefp) anyp)
+    (setf% validation fun
+           options (or options (create))))
+  
+  (defun check (val)
+    (if (not (funcall (@ this validation) val))
+        (or (@ this options message)
+            (@ this default-error-message))
+        t)))
+
+;; some react predicated, should be inside react.paren
+
+(defun optional-function-p (obj)
+  (funcall (or/c functionp undefp) obj))
+
+(defun componentp (obj)
+  (objectp obj))
+
+;; helper functions & predicates
+
+(defun valid-bucket-name-p (name)
+  (and (stringp name)
+       (> (length name) 0)))
+
+(defun valid-path-name-p (name)
+  (and (stringp name)
+       (> (length name) 0)))
+
+(defun/contract activep (obj)
+  (>> objectp booleanp)
+  (not (eq (@ obj active) f)))
+
+(defun/contract markedp (obj)
+  (>> objectp booleanp)
+  (eq (@ obj marked) t))
+
+(defun/contract highlightedp (obj)
+  (>> objectp booleanp)
+  (eq (@ obj hightlighted) t))
+
+(defun equalp (x y)
+  (equal x y))
+
+;; (defun/partial equalp (x y)
+;;   (equal x y))
+
+(defun/contract keyp (key)
+  (>> stringp booleanp)
+  (not (pathp key)))
+
+(defun/contract pathp (key)
+  (>> stringp booleanp)
+  (eql (-> key (slice -1)) "/"))
+
+;;
+
+(defjsclass *s3m ()
+  (defun new-copy-job (dest keys)
+    (let ((keys-keys (map (pick1 "ukey") keys)))
+      (-> this jobs (add-job (create :name (+ "Copy " (length keys-keys) " keys"))))
+      
+      (copy-keys dest keys-keys (lambda (res)
+                                  (log res)))))
+
+  (defun new-move-job (dest keys cb)
+    (-> this jobs (add-job (create :name (+ "Move to " dest))))
+    (move-keys dest
+               (mapcar #'(lambda (key) (@ key ukey)) keys)
+               cb))
+    
+    ;; (let ((keys (array)))
+    ;;   (dolist (key keys)
+    ;;     (push (+ "key://" bucket prefix (@ file key)) keys)
+    ;;     (-> this jobs (add-job (create :name (+ "Move to " dest)))))
+      
+    ;;   (move-keys keys dest cb)))
+  
+  (defun new-delete-job (keys)
+    (let ((keys-keys (map (pick1 "ukey") keys)))
+      (-> this jobs (add-job (create :name (+ "Delete " (length keys-keys) " files"))))
+      (delete-keys keys-keys (lambda (res)
+                               (log res)))))
+  
+  (defun initial-render ()
+    (setf (@ this main) (render-component (% main-page)
+                                        ; :bm (% buffers-manager))
+                                          (html-query "#main"))
+
+          (@ this jobs) (render-component (% jobs-list jobs-status-interval 2000
+                                             :jobs (array))
+                                          (html-query "#jobs")))))
+    
+(defun main ()
+  (let ((s3m (new (*s3m))))
+    (-> s3m (initial-render))
+    (setf (@ window s3m) s3m)))
+
+(defcomponent description-section
+  (defun render ()
+    (who (:div :class "units-row description"
+                      (:div :class "unit-70" (:h4 :style (create padding-left "7px") "Name"))
+                      (:div :class "unit-10" (:h4 "Size"))
+                      ;(:div :class "unit-20" (:h4 "Meta"))
+                      (:div :class "unit-20" (:h4 "Last Modified"))))))
+
+(defcomponent main-page
+  (defun get-initial-state ()
+    (create :query nil))
+  
+  (defun handle-search (query)
+    (-> this (set-state (create :query query))))
+
+  (defun render ()
+    (who (:div (:div :class "units-row"
+                     
+                     (:div :class "unit-50"
+                           (:div :class "units-row"
+                                 (:div :class "unit-50" :style (create padding-top "6px;")
+                                       (:h4 :class "logo" "Flohu"))
+                                 (:div :class "unit-50"
+                                       (% search-bar on-search (@ this handle-search)))))
+                     (:div :class "unit-50" (% user-panel)))
+               (% buffers-manager :ref "manager"
+                                  :query (@ this state query))))))
+
+;;
+
+    (defmacro join (sym arr)
+      `(chain ,arr (join ,sym)))
+
+    (defmacro except-last (arr)
+      `(chain ,arr (slice 0 -1)))
+
+    (defmacro last (arr)
+      `(getprop ,arr (- (length ,arr) 1)))
+
+    (defmacro split (sym arr)
+      `(chain ,arr (split ,sym)))
+    
+    (defmacro slice (arr start end)
+      `(chain ,arr (slice ,start ,end)))
+
+    (defmacro car (arr)
+      `(elt ,arr 0))
+
+    (defmacro cdr (arr)
+      `(chain ,arr (slice 1)))
+    
+    ;; (defmacro slice (arr num)
+    ;;   `(chain ,arr (slice ,num)))
+    
+    (defmacro concat (&rest body)
+      `(+ ,@body))

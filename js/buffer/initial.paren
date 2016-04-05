@@ -1,0 +1,7 @@
+
+(defcomponent initial-buffer
+    (:>> )
+  (defun render ()
+    
+    (who (:div (
+    )))))

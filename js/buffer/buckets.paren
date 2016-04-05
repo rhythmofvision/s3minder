@@ -1,0 +1,54 @@
+
+(defcomponent bucket
+    (:>> :data (object/c :name stringp
+                         :ukey stringp)
+         on-open functionp)
+  
+  (defun open (ev node)
+    (fire on-open ev node this))
+  
+  (defun render ()
+    (with-slots (name)
+        (@ this props data)
+      (who (:div :class "bucket"
+                        (:a :href "#"
+                            :on-click (@ this open)
+                            name))))))
+
+
+(defcomponent buckets-list
+    (:>> :bm componentp
+         :buffer componentp)
+  
+  (defun get-initial-state ()
+    (create :buckets (array)))
+    
+  (defun component-will-mount ()
+    (get-buckets (lambda (data)
+                   (-> self (set-state data)))))
+  
+  (defun create-bucket (bucket-data)
+    (with-slots (bm) (@ this props)
+      (% bucket :data bucket-data
+                on-open (-> bm open (bind bm (@ this props buffer))))))
+
+  (defun render ()
+    (let ((buckets (map (@ this create-bucket)
+                        (@ this state buckets)))
+          (classes (*cx (create* :buffer t
+                                 (+ "buffer-" (@ this props type)) t))))
+      (who (:div :class classes :id "buckets" buckets)))))
+
+
+(defcomponent buckets-buffer
+    (:>> :bm componentp)
+
+  (defun new-bucket-created (name)
+    (log "new-bucket-created"))
+  
+  (defun render ()
+    (who (:div (:div :class "buffer-actions"
+                     (% create-new-bucket on-create (@ this new-bucket-created))
+                     (:button :class "btn btn-small btn-actions" "Add Server"))
+               (% buckets-list :buffer this
+                               :bm (@ this props bm))))))

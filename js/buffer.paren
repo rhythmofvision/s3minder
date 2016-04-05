@@ -1,0 +1,15 @@
+
+(defvar *buffer-scroll-mixin
+  (labels ((on-scroll (ev)
+             (when (> (get-scroll-percentage) 90)
+               (-> this (load-more)))))
+    (create component-did-mount
+            (lambda ()
+              (-> ($ window) (on "scroll" (-> on-scroll (bind this)))))
+            component-will-unmount
+            (lambda ()
+              (-> ($ window) (off "scroll"))))))
+
+
+
+

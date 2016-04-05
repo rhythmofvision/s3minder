@@ -1,0 +1,215 @@
+(defvar *left-button 0)
+(defvar *drag-threshold 3)
+(defvar *drag-mode f)
+
+
+  ;; (defun render ()
+  ;;   (let ((clx (if (@ this state dragging)
+  ;;                  "dnd-draggable"
+  ;;                  "")))
+  ;;   (-> this (transfer-props-to "div"
+  ;;                               (create :style (-> this (style))
+  ;;                                       class-name clx
+  ;;                                       children (@ this props children)
+  ;;                                       on-mouse-down (@ this on-mouse-down))))))
+  
+  ;; (defun style ()
+  ;;   (if (@ this state dragging)
+  ;;       (create position "absolute"
+  ;;               left (@ this state left)
+  ;;               top (@ this state top))
+  ;;       (create)))
+
+(defun drag-dest-p (obj)
+  "Check if obj supports to be used as draggable destination, example
+  of such object would be a path inside the bucket or bucket itself.
+  At the moment it's not very consistent, obj could be either a path,
+  that is represented as js object like { key: ..., name: ... } and we
+  check if name has a trailing slash, or obj could be a status value,
+  which is just a string!"
+
+  (log "drag-dest-p")
+  (log obj)
+
+  
+  
+      ;; checking status
+  (or (stringp obj)
+
+      ;; check if it's a buffer
+      (and (componentp obj)
+           ;; (funcall (object/c :ukey stringp) obj)
+           )
+      
+      ;; checking if key is a path
+      (and (object/c :name stringp)
+           (eq (-> (@ obj name) (slice -1)) "/"))))
+  
+  ;(or (pathp (@ obj key)) nil))
+
+(defcomponent draggable-view
+  (defun get-initial-props ()
+    (create :top 0 :left 0))
+  
+  (defun render ()
+    (let ((style (create :position "absolute"
+                         :left (@ this props left)
+                         :top (@ this props top))))
+      (who (:div :style style
+                        (:p (@ this props num)))))))
+
+
+(defun draggable-manager-mixin ()
+  (defvar dragging-keys-length 0)
+  (defvar dragging-keys nil)
+  
+  (labels ((get-marked-keys ()
+             ;; (log (@ this state)) 
+             (filter #'markedp (@ this state keys)))
+
+           (get-highlighted-obj ()
+             ;; check the objects like status bar and paths first
+             (with-slots (bm) (@ this props)
+               (dolist (buf (vals (@ bm refs)))
+                 ;; (log (@ buf refs list state keys))
+                 ;; (log (@ buf state))
+                 (let* ((keys (@ buf refs list state keys))
+                        (key (or (find-if #'highlightedp keys)
+                                 (@ buf state status-highlighted))))
+                   (when key
+                     (return-from 'get-highlighted-obj key)))))
+             ;; if nothing matched in above we can check the buffer
+             ;; window itself
+             (with-slots (bm) (@ this props)
+
+               (log "get-highlighted-obj")
+               
+               (dolist (buf (vals (@ bm refs)))
+
+                 (log (@ buf state))
+                 (when (eq (@ buf state highlighted) t)
+
+                   ;; [TODO] sending those props directly might not be
+                   ;; a good thing :-/
+                   (return-from 'get-highlighted-obj (@ buf props))))))
+             
+                 
+             ;; (dolist (buf (-> this props
+             ;; ;(setf (@ window obj) this)
+             ;; (or ;; look through this buffer
+             ;;     (find-if #'highlightedp (@ this state keys))
+             ;;     (@ this state status-highlighted)))
+             ;;     ;; look through other buffers
+           
+           (on-drag-start ()
+             (setf *drag-mode t)
+             (let ((keys (-> this (get-marked-keys))))
+               (when (and keys (length keys))
+                 (setf dragging-keys keys
+                       dragging-keys-length (length keys))
+                 (render-component (% draggable-view :num dragging-keys-length)
+                                   (html-query "#helper")))))
+           
+           (on-drag-move (left-pos top-pos)
+             (render-component (% draggable-view :num dragging-keys-length
+                                                 :left (+ left-pos 250)
+                                                 :top top-pos)
+                               (html-query "#helper")))
+               
+           (on-drag-stop ()
+
+             (flet ((remove-drag-num ()
+                      (setf (@ (html-query "#helper") inner-h-t-m-l) "")))
+               (let ((dest-key (-> this (get-highlighted-obj))))
+
+                 (log "got-dest-key")
+                 (log dest-key)
+                 
+                 (when (and dest-key (drag-dest-p dest-key))
+                   
+                   (-> this (_move dest-key
+                                   dragging-keys))
+
+                   (log "yeah")))
+                   
+                                   ;; (-> this (get-marked-keys))))))
+                     
+                     ;; (mapcar (lambda (key) (setf (@ key marked) nil))
+                     ;;         keys)
+
+                     ;; (log 
+                     ;; (log keys)
+                     
+                     ;;         (-> this (get-marked-keys)))
+                                        ; (-> this (set-state (create :selected 0)))
+             
+               (setf *drag-mode f
+                     dragging-keys nil
+                     dragging-keys-length 0)
+               (remove-drag-num))))
+             
+    (create get-marked-keys get-marked-keys
+            get-highlighted-obj get-highlighted-obj
+            on-drag-start on-drag-start
+            on-drag-stop on-drag-stop
+            on-drag-move on-drag-move
+            )))
+
+(defvar *draggable-manager-mixin (funcall draggable-manager-mixin))
+
+
+(defvar *draggable-object-mixin
+  (labels ((get-initial-state ()
+             (create mouse-down f
+                     dragging f))
+
+           (on-mouse-down (ev)
+             (when (equal (@ ev button) *left-button)
+               (-> ev (stop-propagation))
+               (-> this (add-events))
+               (let ((page-offset (-> this (get-d-o-m-node) (get-bounding-client-rect))))
+                 (-> this (set-state (create mouse-down t
+                                             origin-x (@ ev page-x)
+                                             origin-y (@ ev page-y)
+                                             element-x (@ page-offset left)
+                                             element-y (@ page-offset top)))))))
+     
+           (on-mouse-move (ev)
+             (-> ev (prevent-default))
+             (-> ev (stop-propagation))
+             ;; (log "mouse move now")
+             (let* ((delta-x (- (@ ev page-x) (@ this state origin-x)))
+                    (delta-y (- (@ ev page-y) (@ this state origin-y)))
+                    (distance (+ (abs delta-x) (abs delta-y))))
+               (when (and (not (@ this state dragging))
+                          (> distance *drag-threshold))
+                 (-> this (set-state (create :dragging t)))
+                 (fire on-drag-start))
+               (when (@ this state dragging)
+                 (fire on-drag-move (+ delta-x
+                                       (@ this state element-x)
+                                       (@ document body scroll-left))
+                                    (+ delta-y
+                                       (@ this state element-y)
+                                       (@ document body scroll-top))))))
+
+           (on-mouse-up (ev)
+             (-> this (remove-events))
+             (when (@ this state dragging)
+               (fire on-drag-stop)
+               (-> this (set-state (create :dragging f)))))
+
+           (add-events ()
+             (-> document (add-event-listener "mousemove" (@ this on-mouse-move)))
+             (-> document (add-event-listener "mouseup" (@ this on-mouse-up))))
+           
+           (remove-events ()
+             (-> document (remove-event-listener "mousemove" (@ this on-mouse-move)))
+             (-> document (remove-event-listener "mouseup" (@ this on-mouse-up)))))
+  
+    (create get-initial-state get-initial-state
+            on-mouse-down on-mouse-down
+            on-mouse-move on-mouse-move
+            on-mouse-up on-mouse-up
+            add-events add-events
+            remove-events remove-events)))

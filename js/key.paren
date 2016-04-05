@@ -1,0 +1,174 @@
+(defvar *size-ext (array "kb" "mb" "g"))
+(defvar *size-units* (array "b" "kb" "mb" "gb" "tb"))
+(defvar *size-fixed* (array 0 0 1 2 2))
+
+;;
+
+(defvar *lm-format* (new (*date-format "%n %d, %y")))
+
+(defun format-lm (ut)
+  (when ut
+    (let ((dt (universal-time-to-date ut)))
+      (-> *lm-format* (format dt)))))
+
+(defun universal-time-to-date (ut)
+  (let* ((epoch-diff 2208988800)
+         (epoch-time (- ut epoch-diff)))
+    (new (*date (* epoch-time 1000)))))
+
+(defun/contract parse-key (key)
+  (>> stringp objectp)
+  (let* ((uri (clone (new (*u-r-l key))))
+         (parts (split "/" (@ uri pathname))))
+    (setf (@ uri host) (aref parts 2))
+    uri))
+
+  ;; new URL('https://gist.github.com/jlong/2428561?foo=bar#test') =>
+  ;;   {
+  ;;       hash: "#test",
+  ;;       search: "?foo=bar",
+  ;;       pathname: "/jlong/2428561",
+  ;;       port: "",
+  ;;       hostname: "gist.github.com",
+  ;;       host: "gist.github.com",
+  ;;       password: "",
+  ;;       username: "",
+  ;;       protocol: "https:",
+  ;;       origin: "https://gist.github.com",
+  ;;       href: "https://gist.github.com/jlong/2428561?foo=bar#test"
+  ;;   }
+
+(defun make-key-str (bucket path &key (scheme "s3"))
+  (let ((key-str (concat scheme "://" bucket "/")))
+    (when (length path)
+      (setf key-str (concat key-str path)))
+    key-str))
+
+(defun/contract format-size (bytes)
+  (>> numberp stringp)
+  (let ((i 0))
+    (do ()
+        ((not (and (>= bytes 1024) (< i 4))))
+      (setf bytes (/ bytes 1024)
+            i (+ i 1)))
+    (+ (-> bytes (to-fixed (aref *size-fixed* i))) (aref *size-units* i))))
+
+(defcomponent key
+  ;; (defun get-initial-props ()
+  ;;   (create :marked nil))
+    (:>> :active booleanp
+         :data objectp
+         :buffer componentp
+         full-key booleanp
+         on-open functionp
+         on-mark (or/c undefp functionp)
+         on-unmark (or/c undefp functionp) 
+         on-highlight (or/c undefp functionp) 
+         on-unhighlight (or/c undefp functionp) 
+         on-drag-start (or/c undefp functionp)  
+         on-drag-stop (or/c undefp functionp) 
+         on-drag-move (or/c undefp functionp))
+
+  (mixins (array *draggable-object-mixin
+                 *highlight-mixin))
+  
+  (defun get-initial-state ()
+    (create :highlighted nil))
+
+  ;; (defun get-initial-props ()
+  ;;   (create active t))
+
+  ;; (defun component-will-receive-props (props)
+    
+  ;;   (log "PROPS")
+  ;;   (log props)
+  ;;   )
+  
+  
+  (defun mark ()
+    (when (not (eq (@ this props data active) f))
+      (fire on-mark (@ this props data))))
+  
+  (defun unmark ()
+    (fire on-unmark (@ this props data)))
+  
+  (defun toggle-marked ()
+    (when (@ this props active)
+      (if (@ this props data marked)
+          (-> this (unmark))
+          (-> this (mark)))))
+  
+  (defun open (ev node)
+    (fire on-open ev node this))
+  
+  (defun full-path ()
+    (with-slots (data buffer) (@ this props)
+      (if (@ buffer props prefix)
+          (+ (@ buffer props prefix) (@ data ukey))
+          (@ data ukey))))
+  
+  (defun render-path-name ()
+    (with-slots (props) this
+      (cond ((eq (@ props data active) f)
+             (who (:span :class "path" (+ (@ props data bucket) "/" (@ props data name)))))
+            ((@ props buffer path-with-bucket)
+             (who (:a :href "#"
+                      :class "path"
+                      :on-click (@ this open)
+                      (+ (@ props data bucket) "/" (@ props data name)))))
+            ((eq (@ props full-key) t)
+             (who (:a :href "#"
+                      :class "path"
+                      :on-click (@ this open)
+                      (+ (@ props data ukey)))))
+            (t (who (:a :href "#"
+                               :class "path"
+                               :on-click (@ this open)
+                               (@ props data name)))))))
+
+  (defun open-key (ev)
+    ;(-> ev (prevent-default))
+    (log "hello"))
+  
+  (defun key-to-url ()
+    (-> (@ this props data ukey) (replace "s3://"
+                                          "http://s3.amazonaws.com/")))
+  
+  (defun render-key-name ()
+    (with-slots (props) this
+      (cond ((eq (@ props data active) f)
+             (who (:span :class "path" (if (@ props full-key)
+                                           (@ props data ukey)
+                                           (@ props data name)))))
+            (t (who (:a :href (-> this (key-to-url))
+                        :target "_blank"
+                        :on-click (@ this open-key)
+                        (if (@ props full-key)
+                            (@ props data ukey)
+                            (@ props data name))))))))
+  
+  (defun render-name ()
+    (if (pathp (@ this props data name))
+        (-> this (render-path-name))
+        (-> this (render-key-name))))
+  
+  (defun render ()
+    (let* ((data (@ this props data))
+           (active (if (undefp (@ this props data active))
+                       t
+                       (@ this props data active)))
+           (cx (@ *react addons class-set))
+           (classes (cx (create :file t
+                                :units-row t
+                                :nonactive (not active)
+                                :marked (@ this props data marked)
+                                :highlighted (@ this state highlighted)))))
+      (who (:div :class classes
+                        :on-mouse-over (@ this highlight)
+                        :on-mouse-out (@ this unhighlight)
+                        :on-mouse-down (@ this on-mouse-down)
+                        :on-click (@ this toggle-marked)
+                        (:div :class "unit-70" (-> this (render-name)))
+                        (:div :class "unit-10" (format-size (@ this props data size)))
+                        ;(:div :class "unit-20" (@ data meta))
+                        (:div :class "unit-20" (format-lm (@ data lm))))))))

@@ -1,0 +1,115 @@
+
+(defcomponent ask-name
+    (:>> :validation objectp
+         on-submit functionp
+         on-cancel (or/c undefp functionp))
+  
+  (defun get-initial-state ()
+    (create :input nil
+            :error nil))
+  
+  (defun update-input (ev)
+    (set-state% :input (@ ev target value)))
+  
+  (defun get-name (ev node)
+    (-> ev (prevent-default))
+    (let* ((input (@ this state input))
+           (valid (-> this props validation (check input))))
+      (if (eq valid t)
+          (progn
+            (set-state% error nil)
+            (fire on-submit ev node this (@ this state input)))
+          (set-state% error valid))))
+  
+  (defun cancel (ev node)
+    (-> ev (prevent-default))
+    (fire on-cancel ev node this))
+  
+  (defun render ()
+    (who (:div (:form :on-submit (@ this get-name)
+                      (:input :type "text"
+                              :class "widht-60"
+                              :value (@ this state input)
+                              :on-change (@ this update-input))
+                      (:input :type "submit" :class "btn btn-small" :value "OK")
+                      (:input :type "button" :class "btn btn-small" :value "Cancel" :on-click (@ this cancel)))
+               (:p (@ this state error))))))
+
+
+(defcomponent new-path-dialog
+    ;;
+
+  (defun create-path (ev node component path-name)
+    (fire on-create path-name))
+  
+  (defun close-dialog ()
+    (fire on-cancel))
+  
+  (defun render ()
+    (who (:div :style (create display "inline")
+               (% ask-name :validation (new (*validation #'valid-path-name-p))
+                           on-submit (@ this create-path)
+                           on-cancel (@ this close-dialog))))))
+
+(defcomponent create-new-path
+    (:>> on-create functionp)
+         ;buffer componentp)
+
+  (defun get-initial-state ()
+    (create show-ask-name f))
+
+  (defun create-path (ev node component path-name)
+    (-> $ (post "/api/keys"
+                (create :key (+ (@ this props ukey) "/" path-name "/")
+                        :meta (json-encode (create :name (+ path-name "/")
+                                                   :size 0)))
+                (lambda ()
+                  )))
+    (set-state% show-ask-name f)
+    (fire on-create path-name))
+
+  (defun close-dialog ()
+    (set-state% show-ask-name f))
+  
+  (defun show-ask-name ()
+    (set-state% show-ask-name t))
+  
+  (defun render ()
+    (let ((ask-name-comp (when (@ this state show-ask-name)
+                           (% ask-name :validation (new (*validation #'valid-path-name-p))
+                                       on-submit (@ this create-path)
+                                       on-cancel (@ this close-dialog)))))
+      (who (:div :style (create display "inline")
+                 (:div ask-name-comp)
+                 (:button :class "btn btn-small btn-actions" :on-click (@ this show-ask-name) "mkdir"))))))
+
+
+(defcomponent create-new-bucket
+    (:>> on-create functionp)
+
+  (defun get-initial-state ()
+    (create show-ask-name f))
+
+  (defun create-bucket (ev node component bucket-name)
+    (-> $ (post "/api/s3/buckets"
+                (create :name bucket-name)
+                (lambda ()
+                  )))
+    (set-state% show-ask-name f)
+    (fire on-create bucket-name))
+
+  (defun close-dialog ()
+    (set-state% show-ask-name f))
+  
+  (defun show-ask-name ()
+    (set-state% show-ask-name t))
+  
+  (defun render ()
+    (let ((ask-name-comp (when (@ this state show-ask-name)
+                           (% ask-name :validation (new (*validation #'valid-bucket-name-p))
+                                       on-submit (@ this create-bucket)
+                                       on-cancel (@ this close-dialog)))))
+      (who (:div :style (create display "inline")
+                 (:div ask-name-comp)
+                 (:button :class "btn btn-small btn-actions" :on-click (@ this show-ask-name) "Create bucket"))))))
+
