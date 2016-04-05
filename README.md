@@ -1,5 +1,6 @@
+# S3Minder
 
-# S3Minder web based power client for AWS S3
+web S3 client with UI inspired by pathminder
 
 **WORK IN PROGRESS**
 
